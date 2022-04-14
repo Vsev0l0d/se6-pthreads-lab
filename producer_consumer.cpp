@@ -1,6 +1,7 @@
 #include <pthread.h>
 #include <unistd.h>
 #include <iostream>
+#include <atomic>
 
 typedef struct {
   const int sleep_millisecond_limit;
@@ -13,8 +14,10 @@ pthread_cond_t cond_processed;
 pthread_mutex_t mutex;
 
 int get_tid() {
-  // 1 to 3+N thread ID
-  return 0;
+  thread_local static int tid = 0;
+  static std::atomic_int count = 0;
+  if (tid == 0) tid = ++count;
+  return tid;
 }
 
 void* producer_routine(void* arg) {
