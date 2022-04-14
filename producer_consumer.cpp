@@ -3,10 +3,14 @@
 #include <iostream>
 
 typedef struct {
-  int sleep_millisecond_limit;
-  bool is_debug;
+  const int sleep_millisecond_limit;
+  const bool is_debug;
   const int* number;
 } pthrData;
+
+pthread_cond_t cond;
+pthread_cond_t cond_processed;
+pthread_mutex_t mutex;
 
 int get_tid() {
   // 1 to 3+N thread ID
@@ -14,9 +18,17 @@ int get_tid() {
 }
 
 void* producer_routine(void* arg) {
-  (void)arg;
   // read data, loop through each value and update the value, notify consumer,
   // wait for consumer to process
+  int* number = (int*)arg;
+
+  while (scanf("%d", number) == 1) {
+    pthread_mutex_lock(&mutex);
+    printf("%d\n", *number);
+    pthread_cond_signal(&cond);
+    pthread_cond_wait(&cond_processed, &mutex);
+    pthread_mutex_unlock(&mutex);
+  }
   return nullptr;
 }
 
@@ -27,10 +39,15 @@ void* consumer_routine(void* arg) {
   int* psum = (int*)malloc(sizeof(int));
   *psum = 0;
 
+  pthread_mutex_lock(&mutex);
+  pthread_cond_wait(&cond, &mutex);
   *psum += *(data->number);
+  pthread_cond_signal(&cond_processed);
+  pthread_mutex_unlock(&mutex);
+
+  if (data->is_debug) printf("(%d, %d)\n", get_tid(), *psum);
   srand(time(0));
   usleep(1000 * (rand() % (data->sleep_millisecond_limit + 1)));
-  if (data->is_debug) printf("(%d, %d)\n", get_tid(), *psum);
 
   return psum;
 }
@@ -46,12 +63,17 @@ int run_threads(int N, int sleep_millisecond_limit, bool is_debug = false) {
   // start N threads and wait until they're done
   // return aggregated sum of values
   int aggregated_sum = 0, number = 0;
-  pthread_t* threads = (pthread_t*)malloc(N * sizeof(pthread_t));
+  pthread_mutex_init(&mutex, NULL);
+  pthread_cond_init(&cond, NULL);
+  pthread_cond_init(&cond_processed, NULL);
+  pthread_t* threads = (pthread_t*)malloc((N + 1) * sizeof(pthread_t));
   pthrData threadData = {sleep_millisecond_limit, is_debug, &number};
 
   for (int i = 0; i < N; i++) {
     pthread_create(&(threads[i]), NULL, consumer_routine, &threadData);
   }
+  pthread_create(&(threads[N]), NULL, producer_routine, &number);
+  pthread_join(threads[N], NULL);
 
   for (int i = 0; i < N; i++) {
     int* psum;
@@ -61,5 +83,8 @@ int run_threads(int N, int sleep_millisecond_limit, bool is_debug = false) {
   }
 
   free(threads);
+  pthread_cond_destroy(&cond_processed);
+  pthread_cond_destroy(&cond);
+  pthread_mutex_destroy(&mutex);
   return aggregated_sum;
 }
