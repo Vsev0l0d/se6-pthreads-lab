@@ -34,9 +34,7 @@ void* producer_routine(void* arg) {
       while (count_waiting_consumers < 1){};
       pthread_mutex_lock(&mutex);
       pthread_cond_signal(&cond_produced);
-      printf("producer signal sent number=%d\n", *number);
       pthread_cond_wait(&cond_processed, &mutex);
-      printf("producer continue\n");
       pthread_mutex_unlock(&mutex);
   }
 
@@ -54,15 +52,12 @@ void* consumer_routine(void* arg) {
 
   while (!finish) {
       pthread_mutex_lock(&mutex);
-      printf("\t\tconsumer-%d waiting\n", get_tid());
       count_waiting_consumers++;
       pthread_cond_wait(&cond_produced, &mutex);
       count_waiting_consumers--;
-      printf("\t\tconsumer-%d read number=%d\n", get_tid(), *(data->number));
       *psum += *(data->number);
       if (finish) { pthread_mutex_unlock(&mutex); break;}
       pthread_cond_signal(&cond_processed);
-      printf("\t\tconsumer-%d signal sent\n", get_tid());
       pthread_mutex_unlock(&mutex);
 
       if (data->is_debug) printf("(%d, %d)\n", get_tid(), *psum);
