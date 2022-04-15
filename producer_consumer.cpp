@@ -31,11 +31,12 @@ void* producer_routine(void* arg) {
   int* number = (int*)arg;
 
   while (scanf("%d", number) == 1) {
-      while (count_waiting_consumers < 1){};
-      pthread_mutex_lock(&mutex);
-      pthread_cond_signal(&cond_produced);
-      pthread_cond_wait(&cond_processed, &mutex);
-      pthread_mutex_unlock(&mutex);
+    while (count_waiting_consumers < 1) {
+    };
+    pthread_mutex_lock(&mutex);
+    pthread_cond_signal(&cond_produced);
+    pthread_cond_wait(&cond_processed, &mutex);
+    pthread_mutex_unlock(&mutex);
   }
 
   *number = 0;
@@ -51,18 +52,21 @@ void* consumer_routine(void* arg) {
   *psum = 0;
 
   while (!finish) {
-      pthread_mutex_lock(&mutex);
-      count_waiting_consumers++;
-      pthread_cond_wait(&cond_produced, &mutex);
-      count_waiting_consumers--;
-      *psum += *(data->number);
-      if (finish) { pthread_mutex_unlock(&mutex); break;}
-      pthread_cond_signal(&cond_processed);
+    pthread_mutex_lock(&mutex);
+    count_waiting_consumers++;
+    pthread_cond_wait(&cond_produced, &mutex);
+    count_waiting_consumers--;
+    *psum += *(data->number);
+    if (finish) {
       pthread_mutex_unlock(&mutex);
+      break;
+    }
+    pthread_cond_signal(&cond_processed);
+    pthread_mutex_unlock(&mutex);
 
-      if (data->is_debug) printf("(%d, %d)\n", get_tid(), *psum);
-      srand(time(0));
-      usleep(1000 * (rand() % (data->sleep_millisecond_limit + 1)));
+    if (data->is_debug) printf("(%d, %d)\n", get_tid(), *psum);
+    srand(time(0));
+    usleep(1000 * (rand() % (data->sleep_millisecond_limit + 1)));
   }
 
   return psum;
