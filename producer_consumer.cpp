@@ -16,9 +16,9 @@ typedef struct {
 
 pthread_cond_t cond_produced;
 pthread_cond_t cond_processed;
-pthread_mutex_t mutex_produced;
-pthread_mutex_t mutex_processed;
+pthread_mutex_t mutex;
 bool finish = false;
+std::atomic_int count_waiting_consumers = 0;
 
 int get_tid() {
   thread_local static int tid = 0;
@@ -28,16 +28,16 @@ int get_tid() {
 }
 
 void* producer_routine(void* arg) {
-  // read data, loop through each value and update the value, notify consumer,
-  // wait for consumer to process
   int* number = (int*)arg;
 
   while (scanf("%d", number) == 1) {
-    pthread_mutex_lock(&mutex_processed);
-    printf("%d\n", *number);
-    pthread_cond_signal(&cond_produced);
-    pthread_cond_wait(&cond_processed, &mutex_processed);
-    pthread_mutex_unlock(&mutex_processed);
+      while (count_waiting_consumers < 1){};
+      pthread_mutex_lock(&mutex);
+      pthread_cond_signal(&cond_produced);
+      printf("producer signal sent number=%d\n", *number);
+      pthread_cond_wait(&cond_processed, &mutex);
+      printf("producer continue\n");
+      pthread_mutex_unlock(&mutex);
   }
 
   *number = 0;
@@ -47,31 +47,33 @@ void* producer_routine(void* arg) {
 }
 
 void* consumer_routine(void* arg) {
-  // for every update issued by producer, read the value and add to sum
-  // return pointer to result (for particular consumer)
   pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, NULL);
   consumerData* data = (consumerData*)arg;
   int* psum = (int*)malloc(sizeof(int));
   *psum = 0;
 
   while (!finish) {
-    pthread_mutex_lock(&mutex_produced);
-    pthread_cond_wait(&cond_produced, &mutex_produced);
+      pthread_mutex_lock(&mutex);
+      printf("\t\tconsumer-%d waiting\n", get_tid());
+      count_waiting_consumers++;
+      pthread_cond_wait(&cond_produced, &mutex);
+      count_waiting_consumers--;
+      printf("\t\tconsumer-%d read number=%d\n", get_tid(), *(data->number));
       *psum += *(data->number);
-    pthread_cond_signal(&cond_processed);
-    pthread_mutex_unlock(&mutex_produced);
+      if (finish) { pthread_mutex_unlock(&mutex); break;}
+      pthread_cond_signal(&cond_processed);
+      printf("\t\tconsumer-%d signal sent\n", get_tid());
+      pthread_mutex_unlock(&mutex);
 
-    if (finish) break;
-    if (data->is_debug) printf("(%d, %d)\n", get_tid(), *psum);
-    srand(time(0));
-    usleep(1000 * (rand() % (data->sleep_millisecond_limit + 1)));
+      if (data->is_debug) printf("(%d, %d)\n", get_tid(), *psum);
+      srand(time(0));
+      usleep(1000 * (rand() % (data->sleep_millisecond_limit + 1)));
   }
 
   return psum;
 }
 
 void* consumer_interruptor_routine(void* arg) {
-  // interrupt random consumer while producer is running
   interruptorData* data = (interruptorData*)arg;
   while (!finish) {
     srand(time(0));
@@ -80,13 +82,9 @@ void* consumer_interruptor_routine(void* arg) {
   return nullptr;
 }
 
-// the declaration of run threads can be changed as you like
 int run_threads(int N, int sleep_millisecond_limit, bool is_debug = false) {
-  // start N threads and wait until they're done
-  // return aggregated sum of values
   int aggregated_sum = 0, number = 0;
-  pthread_mutex_init(&mutex_produced, NULL);
-  pthread_mutex_init(&mutex_processed, NULL);
+  pthread_mutex_init(&mutex, NULL);
   pthread_cond_init(&cond_produced, NULL);
   pthread_cond_init(&cond_processed, NULL);
 
@@ -116,7 +114,6 @@ int run_threads(int N, int sleep_millisecond_limit, bool is_debug = false) {
   free(consumers);
   pthread_cond_destroy(&cond_processed);
   pthread_cond_destroy(&cond_produced);
-  pthread_mutex_destroy(&mutex_processed);
-  pthread_mutex_destroy(&mutex_produced);
+  pthread_mutex_destroy(&mutex);
   return aggregated_sum;
 }
