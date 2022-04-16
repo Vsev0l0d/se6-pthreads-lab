@@ -57,13 +57,10 @@ void* consumer_routine(void* arg) {
     pthread_cond_wait(&cond_produced, &mutex);
     count_waiting_consumers--;
     *psum += *(data->number);
-    if (finish) {
-      pthread_mutex_unlock(&mutex);
-      break;
-    }
     pthread_cond_signal(&cond_processed);
     pthread_mutex_unlock(&mutex);
 
+    if (finish) break;
     if (data->is_debug) printf("(%d, %d)\n", get_tid(), *psum);
     srand(time(0));
     usleep(1000 * (rand() % (data->sleep_millisecond_limit + 1)));
