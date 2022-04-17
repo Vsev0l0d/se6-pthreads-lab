@@ -14,11 +14,13 @@ typedef struct {
   const int length;
 } interruptorData;
 
-pthread_cond_t cond_produced;
-pthread_cond_t cond_processed;
-pthread_mutex_t mutex;
+pthread_cond_t cond_produced = PTHREAD_COND_INITIALIZER;
+pthread_cond_t cond_processed = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 bool finish = false;
 std::atomic_int count_waiting_consumers = 0;
+std::atomic_int count_alive_consumers;
+bool is_data_produced = false;
 
 int get_tid() {
   thread_local static int tid = 0;
@@ -35,13 +37,14 @@ void* producer_routine(void* arg) {
     };
     pthread_mutex_lock(&mutex);
     pthread_cond_signal(&cond_produced);
-    pthread_cond_wait(&cond_processed, &mutex);
+    is_data_produced = true;
+    while (is_data_produced) pthread_cond_wait(&cond_processed, &mutex);
     pthread_mutex_unlock(&mutex);
   }
 
   *number = 0;
   finish = true;
-  pthread_cond_broadcast(&cond_produced);
+  while (count_alive_consumers) pthread_cond_broadcast(&cond_produced);
   return nullptr;
 }
 
@@ -54,7 +57,9 @@ void* consumer_routine(void* arg) {
   while (!finish) {
     pthread_mutex_lock(&mutex);
     count_waiting_consumers++;
-    pthread_cond_wait(&cond_produced, &mutex);
+    while (!is_data_produced && !finish)
+      pthread_cond_wait(&cond_produced, &mutex);
+    is_data_produced = false;
     count_waiting_consumers--;
     *psum += *(data->number);
     pthread_cond_signal(&cond_processed);
@@ -66,6 +71,7 @@ void* consumer_routine(void* arg) {
     usleep(1000 * (rand() % (data->sleep_millisecond_limit + 1)));
   }
 
+  count_alive_consumers--;
   return psum;
 }
 
@@ -80,9 +86,7 @@ void* consumer_interruptor_routine(void* arg) {
 
 int run_threads(int N, int sleep_millisecond_limit, bool is_debug = false) {
   int aggregated_sum = 0, number = 0;
-  pthread_mutex_init(&mutex, NULL);
-  pthread_cond_init(&cond_produced, NULL);
-  pthread_cond_init(&cond_processed, NULL);
+  count_alive_consumers = N;
 
   pthread_t* consumers = (pthread_t*)malloc(N * sizeof(pthread_t));
   consumerData consumersData = {sleep_millisecond_limit, is_debug, &number};
