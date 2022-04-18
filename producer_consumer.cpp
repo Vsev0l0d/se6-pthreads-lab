@@ -19,6 +19,7 @@ pthread_cond_t cond_processed = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 bool finish = false;
 std::atomic_int count_waiting_consumers = 0;
+std::atomic_int count_alive_consumers;
 bool is_data_produced = false;
 
 int get_tid() {
@@ -43,7 +44,7 @@ void* producer_routine(void* arg) {
 
   *number = 0;
   finish = true;
-  pthread_cond_broadcast(&cond_produced);
+  while (count_alive_consumers) pthread_cond_broadcast(&cond_produced);
   return nullptr;
 }
 
@@ -70,6 +71,7 @@ void* consumer_routine(void* arg) {
     usleep(1000 * (rand() % (data->sleep_millisecond_limit + 1)));
   }
 
+  count_alive_consumers--;
   return psum;
 }
 
@@ -84,6 +86,7 @@ void* consumer_interruptor_routine(void* arg) {
 
 int run_threads(int N, int sleep_millisecond_limit, bool is_debug = false) {
   int aggregated_sum = 0, number = 0;
+  count_alive_consumers = N;
 
   pthread_t* consumers = (pthread_t*)malloc(N * sizeof(pthread_t));
   consumerData consumersData = {sleep_millisecond_limit, is_debug, &number};
