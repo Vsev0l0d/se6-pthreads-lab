@@ -14,12 +14,10 @@ typedef struct {
   const int length;
 } interruptorData;
 
-pthread_cond_t cond_produced = PTHREAD_COND_INITIALIZER;
-pthread_cond_t cond_processed = PTHREAD_COND_INITIALIZER;
-pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
-bool finish = false;
-std::atomic_int count_waiting_consumers = 0;
-bool is_data_produced = false;
+pthread_cond_t cond_produced, cond_processed;
+pthread_mutex_t mutex;
+std::atomic_int count_waiting_consumers;
+bool finish, is_data_produced;
 
 int get_tid() {
   thread_local static int tid = 0;
@@ -84,6 +82,13 @@ void* consumer_interruptor_routine(void* arg) {
 
 int run_threads(int N, int sleep_millisecond_limit, bool is_debug = false) {
   int aggregated_sum = 0, number = 0;
+
+  pthread_cond_init(&cond_processed, NULL);
+  pthread_cond_init(&cond_produced, NULL);
+  pthread_mutex_init(&mutex, NULL);
+  finish = false;
+  count_waiting_consumers = 0;
+  is_data_produced = false;
 
   pthread_t* consumers = (pthread_t*)malloc(N * sizeof(pthread_t));
   consumerData consumersData = {sleep_millisecond_limit, is_debug, &number};
